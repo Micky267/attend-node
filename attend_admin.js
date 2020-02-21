@@ -16,6 +16,102 @@ app.use(bodyParser.json());
  * 
  */
 
+/**
+ * 所有人
+ */
+
+//修改密码
+app.post("/user/updatePW",(req,res)=>{
+    console.log('修改密码接收到的参数',req.body)
+    let userId = req.body.sid,
+        pw = req.body.pw,
+        role = req.body.role,
+        sql = ''
+        switch(role){
+            case 1:
+                sql = `UPDATE student SET  password = '${pw}' where sid = '${userId}'`
+                break;
+            case 2:
+                sql = `UPDATE teacher SET  password = '${pw}' where sid = '${userId}'`
+                break;
+            case 3:
+                sql = `UPDATE admin SET  password = '${pw}' where sid = '${userId}'`
+            default:
+                return
+        }
+        connection.query(sql,(error,data)=>{
+            if(error){
+                var result = {
+                   "status": "500",
+                   "message": error,
+                }
+                return res.json(result)
+            }
+            else{
+               var result = {
+                   "status": "200",
+                   "message": "success",
+                   data
+                }
+                return res.json(result)
+            }
+        })
+
+
+})
+
+//登录
+app.get("/user/login",(req,res)=>{
+    console.log('登录接收到的参数',req.query)
+    let userId = req.query.sid,
+        pw = req.query.pw,
+        role = req.query.role,
+        sql = ''
+        switch(role){
+            case '1':
+                sql = `select * from student where sid = '${userId}' and password ='${pw}'`
+                break;
+            case '2':
+                sql = `select * from teacher where sid = '${userId}' and password ='${pw}'`
+                break;
+            case '3':
+                sql = `select * from admin where sid = '${userId}' and password ='${pw}'`
+                break;
+                default:
+                sql = ''
+        }
+        console.log('登录时的sql',sql)
+        connection.query(sql,(error,data)=>{
+            if(error){
+                var result = {
+                   "status": "500",
+                   "message": error,
+                }
+                return res.json(result)
+            }
+            else{
+                if(data.length>0){
+                    var result = {
+                        "status": "200",
+                        "message": "success",
+                        data
+                     }
+                }
+                else{
+                    var result = {
+                        "status": "200",
+                        "message": "fail",
+                        data
+                     }
+                }
+
+                return res.json(result)
+            }
+        })
+
+
+})
+
  /**
   * 学生和老师
   */
@@ -434,6 +530,176 @@ app.post("/teacher/updateStu",(req,res)=>{
 
     //2、在teach_class_student 修改原来状态和现在状态的次数
 
+})
+
+/**
+ * 管理员功能
+ * 
+ */
+
+ //请求课程列表
+ app.get("/admin/getAllCoures",(req,res)=>{
+     console.log('管理员拿到的请求参数')
+     let queryObj = req.query,
+         condition = '',
+         ratesql = '',
+         resData = []
+            //将参数格式改成请求数据库字段格式
+    if(Object.keys(queryObj).length!=0){
+        for (let key in queryObj){
+            if(queryObj[key].toString().trim().length != 0){
+              let attr = ''
+              switch(key){
+                case 'page':
+                    continue;  
+                case 'size':
+                    continue;  
+                case 'cName':
+                  attr = 'course.name'
+                  condition += `AND ${attr} like '%${queryObj[key]}%' `
+                  continue;
+                case 'tName':
+                  attr = 'teacher.name'
+                  condition += `AND ${attr} like '%${queryObj[key]}%' `
+                  continue;
+                case 'grade':
+                  attr=`course.grade` 
+                  break;
+                default :
+                  attr = key
+              }
+              condition += `AND ${attr} = '${queryObj[key]}' `
+            }
+          }
+          console.log('要添加的语句',condition)
+     }
+
+     let  getCidSql = `select teacher.name,teach_class.sid,course.name,course.year,course.semester,course.grade 
+                        from teach_class,teacher,course
+                        where teacher.sid = teach_class.t_id and course.sid = teach_class.c_id ${condition};`
+    connection.query(getCidSql,(error,data)=>{
+        if(error){
+            console.log('mei进来了')
+            
+            var result = {
+                "status": "500",
+                "message": error,
+            }
+            return res.json(result)
+        }
+        else{
+            console.log('进来了',data)
+            if(data.length!=0){
+                for(let i = 0;i < data.length; i++){
+                    ratesql = `SELECT 
+                    teacher.name AS tName,
+                    CONCAT(course.name,'(',teach_class.time,')') AS cName, CONCAT(CAST(year AS CHAR),'第',CAST(semester AS CHAR),'学期') AS yearSemester,course.grade AS cGrade,
+                    teach_class.attend_total AS attendTotal,
+                    teach_class.stu_total AS stuTotal,SUM(leaves)/(teach_class.attend_total*stu_total)  AS leaveRate, SUM(truants)/(teach_class.attend_total*stu_total)  AS truantRate, SUM(lates)/(teach_class.attend_total*stu_total)  AS lateRate, SUM((teach_class.attend_total-truants-leaves-lates))/(teach_class.attend_total*stu_total) AS normalRate
+                    FROM teacher,teach_class_student,course,teach_class,(select @i:=0) as it 
+                    WHERE
+                    teach_class.sid = teach_class_student.tc_id AND
+                    course.sid = teach_class.c_id AND
+                    teacher.sid = teach_class.t_id AND
+                    teach_class.sid = '${data[i].sid}';`
+                    console.log('拿到比率的sql语句',ratesql)
+                    connection.query(ratesql,(error,data2)=>{
+                        if(error){
+                            var result = {
+                               "status": "500",
+                               "message": error,
+                            }
+                            return res.json(result)
+                        }
+                        else{
+                            resData.push(data2[0])
+                            if(i == data.length-1){
+                                console.log('最后了')
+                                var result = {
+                                    "status": "200",
+                                    "message": "success",
+                                    data:resData
+                                 }
+                                 return res.json(result)
+                            }
+                        }
+                    })
+                    
+                }
+            }
+
+            else{
+                var result = {
+                    "status": "200",
+                    "message": "success",
+                    data:[]
+                 }
+                 return res.json(result)
+            }
+          
+
+
+            // var result = {
+            //     "status": "200",
+            //     "message": "success",
+            //     data
+            // }
+            // return res.json(result)
+        }
+    })       
+        
+
+ })
+
+
+ //学生信息
+ app.get("/admin/getStudent",(req,res)=>{
+    let sid = req.query.sid
+        sql = `SELECT 
+        student.sid AS sid,student.name AS sName,sex,phone,grade,faculty,majoy,admin_class.class_name AS className
+        FROM student,admin_class where student.ac_id = admin_class.sid and student.sid = '${sid}'`
+        connection.query(sql,(error,data)=>{
+            if(error){
+                var result = {
+                   "status": "500",
+                   "message": error,
+                }
+                return res.json(result)
+            }
+            else{
+               var result = {
+                   "status": "200",
+                   "message": "success",
+                   data
+                }
+                return res.json(result)
+            }
+        })
+})
+
+//老师信息
+app.get("/admin/getTeacher",(req,res)=>{
+    console.log('传过来的参数：',req.query)
+    let sid = req.query.sid
+        sql = `SELECT sid,name AS sName,sex,phone FROM teacher where sid = '${sid}'`
+        console.log('获取老师信息的sql',sql)
+        connection.query(sql,(error,data)=>{
+            if(error){
+                var result = {
+                   "status": "500",
+                   "message": error,
+                }
+                return res.json(result)
+            }
+            else{
+               var result = {
+                   "status": "200",
+                   "message": "success",
+                   data
+                }
+                return res.json(result)
+            }
+        })
 })
 
 /**
